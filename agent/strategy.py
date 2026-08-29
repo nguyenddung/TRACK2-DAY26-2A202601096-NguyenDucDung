@@ -15,12 +15,12 @@ ways to spend a single round, both real, both computed against
 them live rather than just asserting the numbers, so they can never
 silently drift from the real cost table):
 
-    DISCIPLINED  slides.query(fields=[title,body])   base1 + (body3+title1) + 1row*1  =  6
+    DISCIPLINED  slides.query(fields=[title,body])   base1 + (body2+title0) + 1row*1  =  4
                  slides.get_frame(default fields)     base2 + (body2+title0)          =  4
                  registry.provenance(default fields)  base1 + (etag0)                 =  1
                  -------------------------------------------------------
-                 = 11 credits this round — the CEILING of FINAL-PLAN.md 4.3's
-                   "8-11" (a round that skips the provenance re-read, or
+                 = 9 credits this round — within FINAL-PLAN.md 4.3's "8-11"
+                   band (a round that skips the provenance re-read, or
                    reuses a cached body via `ResultCache` below, lands
                    nearer the floor of that range instead).
 
@@ -32,14 +32,19 @@ silently drift from the real cost table):
                  = 49 credits — MORE THAN ONE THIRD OF THE WHOLE DUEL'S
                    BUDGET, spent in a single round.
 
-Play at the DISCIPLINED CEILING (11 cr) every single round and 10 rounds
-costs 110 — a hair OVER the 100-credit pool: this file's own `__main__`
-demo shows that combination surviving nine full rounds and only running dry
-paying for the tenth. That is not a bug in the arithmetic; it is the honest
-point — "disciplined" is not a magic number, it is not re-paying for the
-same provenance read or the same frame body every round when you already
-have it (`ResultCache` below, and `BudgetPacer.is_affordable`'s reserve
-floor). Play CARELESS even once and you are mathematically bankrupt by
+Play at the DISCIPLINED CEILING (9 cr, computed live against the real
+`kit.mcp.specs` table — this file's own `__main__` demo recomputes it rather
+than hard-coding it, so it never silently drifts from the real cost table)
+every single round and 10 rounds costs 90 — comfortably inside the
+100-credit pool, never bankrupt: this file's own `__main__` demo checks
+exactly that. That headroom is still not something to spend carelessly —
+"disciplined" is not a magic number, it is not re-paying for the same
+provenance read or the same frame body every round when you already have it
+(`ResultCache` below, and `BudgetPacer.is_affordable`'s reserve floor) —
+but the margin means a single expensive-but-necessary call (an A2A
+delegation, a second read to resolve a flagged conflict) does not put the
+whole duel at risk the way it would if disciplined play were already at the
+pool's edge. Play CARELESS even once and you are mathematically bankrupt by
 round 3 (100 − 49 − 49 < 0) — not because the game is rigged against you,
 but because `registry.list_servers` and `glossary.list_terms` were
 deliberately built so their DEFAULT field mask is their full, expensive
@@ -396,7 +401,7 @@ if __name__ == "__main__":
     assert succ == ("slides", "query")
     assert successor_of("slides", "query") is None
 
-    print("\n=== BudgetPacer: disciplined-at-the-CEILING barely lasts the duel; careless does not ===\n")
+    print("\n=== BudgetPacer: disciplined-at-the-CEILING comfortably lasts the duel; careless does not ===\n")
     disciplined_pacer = BudgetPacer()
     for round_no in range(1, ROUNDS_PER_DUEL + 1):
         disciplined_pacer.record_spend(round_no, disciplined)
@@ -405,12 +410,16 @@ if __name__ == "__main__":
         f"credits_left={disciplined_pacer.credits_left} bankrupt_by={disciplined_pacer.bankrupt_by()}"
     )
     # Even the CEILING of "disciplined" (paying full price for query + get_frame
-    # + provenance, EVERY round, with no caching at all) survives nine full
-    # rounds and only runs dry paying for the tenth -- a sharp contrast with
-    # careless play below, and the honest reason ResultCache/pacing exist:
-    # not needing all three calls every round is what buys the margin
-    # FINAL-PLAN.md 4.3 calls "sustainable".
-    assert disciplined_pacer.bankrupt_by() == ROUNDS_PER_DUEL, disciplined_pacer.bankrupt_by()
+    # + provenance, EVERY round, with no caching at all) never goes bankrupt --
+    # `disciplined_round_cost()` is computed LIVE against the real
+    # `kit.mcp.specs` table (this file's own module docstring explains why:
+    # "if kit/mcp/specs.py is ever retuned, this number moves with it instead
+    # of silently lying"), so this assertion checks the qualitative claim
+    # that matters (disciplined play survives the whole duel) rather than a
+    # specific credits_left value that would go stale the next time the cost
+    # table is retuned. Contrast careless play below, which is not close.
+    assert disciplined_pacer.bankrupt_by() is None, disciplined_pacer.bankrupt_by()
+    assert disciplined_pacer.credits_left >= 0, disciplined_pacer.credits_left
     nine_rounds_pacer = BudgetPacer()
     for round_no in range(1, ROUNDS_PER_DUEL):  # 9 rounds, not 10
         nine_rounds_pacer.record_spend(round_no, disciplined)
